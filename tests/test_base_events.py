@@ -5,6 +5,7 @@ import logging
 import math
 import socket
 import sys
+import threading
 import time
 import unittest
 
@@ -12,11 +13,16 @@ import trollius as asyncio
 from trollius import Return, From
 from trollius import base_events
 from trollius import constants
-from trollius import test_support as support
 from trollius import test_utils
 from trollius.py33_exceptions import BlockingIOError
 from trollius.test_utils import mock
 from trollius.time_monotonic import time_monotonic
+try:
+    from test import support
+    from test.script_helper import assert_python_ok
+except ImportError:
+    from trollius import test_support as support
+    from trollius.test_support import assert_python_ok
 
 
 MOCK_ANY = mock.ANY
@@ -146,28 +152,71 @@ class BaseEventLoopTests(test_utils.TestCase):
         # are really slow
         self.assertLessEqual(dt, 0.9, dt)
 
-    def test_assert_is_current_event_loop(self):
+    def check_thread(self, loop, debug):
         def cb():
             pass
 
-        other_loop = base_events.BaseEventLoop()
-        other_loop._selector = mock.Mock()
-        asyncio.set_event_loop(other_loop)
+        loop.set_debug(debug)
+        if debug:
+            msg = ("Non-thread-safe operation invoked on an event loop other "
+                  "than the current one")
+            with self.assertRaisesRegex(RuntimeError, msg):
+                loop.call_soon(cb)
+            with self.assertRaisesRegex(RuntimeError, msg):
+                loop.call_later(60, cb)
+            with self.assertRaisesRegex(RuntimeError, msg):
+                loop.call_at(loop.time() + 60, cb)
+        else:
+            loop.call_soon(cb)
+            loop.call_later(60, cb)
+            loop.call_at(loop.time() + 60, cb)
 
-        # raise RuntimeError if the event loop is different in debug mode
-        self.loop.set_debug(True)
-        with self.assertRaises(RuntimeError):
-            self.loop.call_soon(cb)
-        with self.assertRaises(RuntimeError):
-            self.loop.call_later(60, cb)
-        with self.assertRaises(RuntimeError):
-            self.loop.call_at(self.loop.time() + 60, cb)
+    def test_check_thread(self):
+        def check_in_thread(loop, event, debug, create_loop, fut):
+            # wait until the event loop is running
+            event.wait()
+
+            try:
+                if create_loop:
+                    loop2 = base_events.BaseEventLoop()
+                    try:
+                        asyncio.set_event_loop(loop2)
+                        self.check_thread(loop, debug)
+                    finally:
+                        asyncio.set_event_loop(None)
+                        loop2.close()
+                else:
+                    self.check_thread(loop, debug)
+            except Exception as exc:
+                loop.call_soon_threadsafe(fut.set_exception, exc)
+            else:
+                loop.call_soon_threadsafe(fut.set_result, None)
+
+        def test_thread(loop, debug, create_loop=False):
+            event = threading.Event()
+            fut = asyncio.Future(loop=loop)
+            loop.call_soon(event.set)
+            args = (loop, event, debug, create_loop, fut)
+            thread = threading.Thread(target=check_in_thread, args=args)
+            thread.start()
+            loop.run_until_complete(fut)
+            thread.join()
+
+        self.loop._process_events = mock.Mock()
+        self.loop._write_to_self = mock.Mock()
+
+        # raise RuntimeError if the thread has no event loop
+        test_thread(self.loop, True)
 
         # check disabled if debug mode is disabled
-        self.loop.set_debug(False)
-        self.loop.call_soon(cb)
-        self.loop.call_later(60, cb)
-        self.loop.call_at(self.loop.time() + 60, cb)
+        test_thread(self.loop, False)
+
+        # raise RuntimeError if the event loop of the thread is not the called
+        # event loop
+        test_thread(self.loop, True, create_loop=True)
+
+        # check disabled if debug mode is disabled
+        test_thread(self.loop, False, create_loop=True)
 
     def test_run_once_in_executor_handle(self):
         def cb():
@@ -581,12 +630,12 @@ class BaseEventLoopTests(test_utils.TestCase):
             'loop = trollius.get_event_loop()',
             'print(loop.get_debug())'))
 
-        sts, stdout, stderr = support.assert_python_ok('-c', code,
-                                                       TROLLIUSDEBUG='')
+        sts, stdout, stderr = assert_python_ok('-c', code,
+                                               TROLLIUSDEBUG='')
         self.assertEqual(stdout.rstrip(), b'False')
 
-        sts, stdout, stderr = support.assert_python_ok('-c', code,
-                                                       TROLLIUSDEBUG='1')
+        sts, stdout, stderr = assert_python_ok('-c', code,
+                                               TROLLIUSDEBUG='1')
         self.assertEqual(stdout.rstrip(), b'True')
 
     def test_create_task(self):
