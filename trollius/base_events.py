@@ -22,7 +22,6 @@ import os
 import socket
 import subprocess
 import sys
-import threading
 import traceback
 try:
     from collections import OrderedDict
