@@ -2,6 +2,18 @@
 Change log
 ++++++++++
 
+Version 1.0.5
+=============
+
+* Python issue #22926: In debug mode, call_soon(), call_at() and call_later()
+  methods of BaseEventLoop now use the identifier of the current thread to
+  ensure that they are called from the thread running the event loop. Before,
+  the get_event_loop() method was used to check the thread, and no exception
+  was raised when the thread had no event loop. Now the methods always raise an
+  exception in debug mode when called from the wrong thread. It should help to
+  notice misusage of the API.
+
+
 2014-12-19: Version 1.0.4
 =========================
 
