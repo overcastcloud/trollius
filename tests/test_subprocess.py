@@ -6,12 +6,9 @@ import signal
 import sys
 import unittest
 from trollius import From, Return
+from trollius import test_support as support
 from trollius.test_utils import mock
 from trollius.py33_exceptions import BrokenPipeError, ConnectionResetError
-try:
-    from test import support
-except ImportError:
-    from trollius import test_support as support
 
 if sys.platform != 'win32':
     from trollius import unix_events

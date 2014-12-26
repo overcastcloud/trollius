@@ -10,14 +10,9 @@ import weakref
 import trollius as asyncio
 from trollius import From, Return
 from trollius import coroutines
+from trollius import test_support as support
 from trollius import test_utils
 from trollius.test_utils import mock
-try:
-    from test import support
-    from test.script_helper import assert_python_ok
-except ImportError:
-    from trollius import test_support as support
-    from trollius.test_support import assert_python_ok
 
 
 PY33 = (sys.version_info >= (3, 3))
@@ -1779,14 +1774,14 @@ class GatherTestsBase:
             'import trollius.coroutines',
             'print(trollius.coroutines._DEBUG)'))
 
-        sts, stdout, stderr = assert_python_ok('-c', code,
-                                               TROLLIUSDEBUG='',
-                                               PYTHONPATH=aio_path)
+        sts, stdout, stderr = support.assert_python_ok('-c', code,
+                                                       TROLLIUSDEBUG='',
+                                                       PYTHONPATH=aio_path)
         self.assertEqual(stdout.rstrip(), b'False')
 
-        sts, stdout, stderr = assert_python_ok('-c', code,
-                                               TROLLIUSDEBUG='1',
-                                               PYTHONPATH=aio_path)
+        sts, stdout, stderr = support.assert_python_ok('-c', code,
+                                                       TROLLIUSDEBUG='1',
+                                                       PYTHONPATH=aio_path)
         self.assertEqual(stdout.rstrip(), b'True')
 
 

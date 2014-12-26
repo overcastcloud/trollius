@@ -10,13 +10,10 @@ if sys.platform != 'win32':
 
 from trollius import _overlapped
 from trollius import py33_winapi as _winapi
+from trollius import test_support as support
 from trollius import test_utils
 from trollius import windows_utils
 from trollius.test_utils import mock
-try:
-    from test import support
-except ImportError:
-    from trollius import test_support as support
 
 
 class WinsocketpairTests(unittest.TestCase):
