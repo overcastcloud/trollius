@@ -9,7 +9,6 @@ try:
 except ImportError:
     ssl = None
 else:
-    HAS_SNI = getattr(ssl, 'HAS_SNI', False)
     from trollius.py3_ssl import SSLWantReadError, SSLWantWriteError
 
 import trollius as asyncio
