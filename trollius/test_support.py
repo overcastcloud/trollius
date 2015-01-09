@@ -1,5 +1,5 @@
 # Subset of test.support from CPython 3.5, just what we need to run asyncio
-# test suite. The cde is copied from CPython 3.5 to not depend on the test
+# test suite. The code is copied from CPython 3.5 to not depend on the test
 # module because it is rarely installed.
 
 # Ignore symbol TEST_HOME_DIR: test_events works without it
@@ -213,12 +213,13 @@ def bind_port(sock, host=HOST):
     if sock.family == socket.AF_INET and sock.type == socket.SOCK_STREAM:
         if hasattr(socket, 'SO_REUSEADDR'):
             if sock.getsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR) == 1:
-                raise TestFailed("tests should never set the SO_REUSEADDR "   \
+                raise TestFailed("tests should never set the SO_REUSEADDR "
                                  "socket option on TCP/IP sockets!")
         if hasattr(socket, 'SO_REUSEPORT'):
             try:
-                if sock.getsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT) == 1:
-                    raise TestFailed("tests should never set the SO_REUSEPORT "   \
+                reuse = sock.getsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT)
+                if reuse == 1:
+                    raise TestFailed("tests should never set the SO_REUSEPORT "
                                      "socket option on TCP/IP sockets!")
             except OSError:
                 # Python's socket module was compiled using modern headers
@@ -260,8 +261,8 @@ def requires_mac_ver(*min_version):
     return decorator
 
 def _requires_unix_version(sysname, min_version):
-    """Decorator raising SkipTest if the OS is `sysname` and the version is less
-    than `min_version`.
+    """Decorator raising SkipTest if the OS is `sysname` and the version is
+    less than `min_version`.
 
     For example, @_requires_unix_version('FreeBSD', (7, 2)) raises SkipTest if
     the FreeBSD version is less than 7.2.
@@ -287,8 +288,8 @@ def _requires_unix_version(sysname, min_version):
     return decorator
 
 def requires_freebsd_version(*min_version):
-    """Decorator raising SkipTest if the OS is FreeBSD and the FreeBSD version is
-    less than `min_version`.
+    """Decorator raising SkipTest if the OS is FreeBSD and the FreeBSD version
+    is less than `min_version`.
 
     For example, @requires_freebsd_version(7, 2) raises SkipTest if the FreeBSD
     version is less than 7.2.

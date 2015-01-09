@@ -283,7 +283,8 @@ class BaseEventLoopTests(test_utils.TestCase):
     @mock.patch('trollius.base_events.logger')
     def test__run_once_logging(self, m_logger):
         def slow_select(timeout):
-            # Sleep a bit longer than a second to avoid timer resolution issues.
+            # Sleep a bit longer than a second to avoid timer resolution
+            # issues.
             time.sleep(1.1)
             return []
 
@@ -1225,7 +1226,8 @@ class BaseEventLoopWithSelectorTests(test_utils.TestCase):
         fmt = m_logger.warning.call_args[0][0]
         args = m_logger.warning.call_args[0][1:]
         self.assertRegex(fmt % tuple(args),
-                         "^Executing <Handle.*stop_loop_cb.*> took .* seconds$")
+                         "^Executing <Handle.*stop_loop_cb.*> "
+                         "took .* seconds$")
 
         # slow task
         asyncio.async(stop_loop_coro(self.loop), loop=self.loop)
@@ -1233,7 +1235,8 @@ class BaseEventLoopWithSelectorTests(test_utils.TestCase):
         fmt = m_logger.warning.call_args[0][0]
         args = m_logger.warning.call_args[0][1:]
         self.assertRegex(fmt % tuple(args),
-                         "^Executing <Task.*stop_loop_coro.*> took .* seconds$")
+                         "^Executing <Task.*stop_loop_coro.*> "
+                         "took .* seconds$")
 
 
 if __name__ == '__main__':

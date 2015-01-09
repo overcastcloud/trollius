@@ -81,7 +81,7 @@ class Task(futures.Future):
         return set(t for t in cls._all_tasks if t._loop is loop)
 
     def __init__(self, coro, loop=None):
-        assert coroutines.iscoroutine(coro), repr(coro)  # Not a coroutine function!
+        assert coroutines.iscoroutine(coro), repr(coro)
         super(Task, self).__init__(loop=loop)
         if self._source_traceback:
             del self._source_traceback[-1]
@@ -640,11 +640,12 @@ def gather(*coros_or_futures, **kw):
     results = [None] * nchildren
 
     def _done_callback(i, fut):
-        if outer._state != futures._PENDING:
-            if fut._exception is not None:
+        if outer.done():
+            if not fut.cancelled():
                 # Mark exception retrieved.
                 fut.exception()
             return
+
         if fut._state == futures._CANCELLED:
             res = futures.CancelledError()
             if not return_exceptions:
@@ -702,9 +703,11 @@ def shield(arg, loop=None):
 
     def _done_callback(inner):
         if outer.cancelled():
-            # Mark inner's result as retrieved.
-            inner.cancelled() or inner.exception()
+            if not inner.cancelled():
+                # Mark inner's result as retrieved.
+                inner.exception()
             return
+
         if inner.cancelled():
             outer.cancel()
         else:

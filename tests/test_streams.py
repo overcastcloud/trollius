@@ -619,8 +619,8 @@ os.close(fd)
             kw = {'loop': self.loop}
             if compat.PY3:
                 kw['pass_fds'] = set((wfd,))
-            proc = self.loop.run_until_complete(
-                asyncio.create_subprocess_exec(*args, **kw))
+            create = asyncio.create_subprocess_exec(*args, **kw)
+            proc = self.loop.run_until_complete(create)
             self.loop.run_until_complete(proc.wait())
         finally:
             asyncio.set_child_watcher(None)

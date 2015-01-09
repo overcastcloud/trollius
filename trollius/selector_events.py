@@ -77,7 +77,7 @@ class BaseSelectorEventLoop(base_events.BaseEventLoop):
         return _SelectorSocketTransport(self, sock, protocol, waiter,
                                         extra, server)
 
-    def _make_ssl_transport(self, rawsock, protocol, sslcontext, waiter,
+    def _make_ssl_transport(self, rawsock, protocol, sslcontext, waiter=None,
                             server_side=False, server_hostname=None,
                             extra=None, server=None):
         return _SelectorSslTransport(
@@ -187,7 +187,7 @@ class BaseSelectorEventLoop(base_events.BaseEventLoop):
         else:
             if sslcontext:
                 self._make_ssl_transport(
-                    conn, protocol_factory(), sslcontext, None,
+                    conn, protocol_factory(), sslcontext,
                     server_side=True, extra={'peername': addr}, server=server)
             else:
                 self._make_socket_transport(
@@ -385,15 +385,15 @@ class BaseSelectorEventLoop(base_events.BaseEventLoop):
                     break
         except BlockingIOError:
             fut.add_done_callback(functools.partial(self._sock_connect_done,
-                                                    sock))
+                                                    fd))
             self.add_writer(fd, self._sock_connect_cb, fut, sock, address)
         except Exception as exc:
             fut.set_exception(exc)
         else:
             fut.set_result(None)
 
-    def _sock_connect_done(self, sock, fut):
-        self.remove_writer(sock.fileno())
+    def _sock_connect_done(self, fd, fut):
+        self.remove_writer(fd)
 
     def _sock_connect_cb(self, fut, sock, address):
         if fut.cancelled():
@@ -503,7 +503,8 @@ class _SelectorTransport(transports._FlowControlMixin,
                 info.append('read=idle')
 
             polling = _test_selector_event(self._loop._selector,
-                                           self._sock_fd, selectors.EVENT_WRITE)
+                                           self._sock_fd,
+                                           selectors.EVENT_WRITE)
             if polling:
                 state = 'polling'
             else:

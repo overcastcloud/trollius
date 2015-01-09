@@ -45,7 +45,7 @@ from .log import logger
 from .time_monotonic import time_monotonic, time_monotonic_resolution
 
 
-__all__ = ['BaseEventLoop', 'Server']
+__all__ = ['BaseEventLoop']
 
 
 # Argument for default thread pool executor creation.
@@ -210,7 +210,7 @@ class BaseEventLoop(events.AbstractEventLoop):
         """Create socket transport."""
         raise NotImplementedError
 
-    def _make_ssl_transport(self, rawsock, protocol, sslcontext, waiter,
+    def _make_ssl_transport(self, rawsock, protocol, sslcontext, waiter=None,
                             server_side=False, server_hostname=None,
                             extra=None, server=None):
         """Create SSL transport."""

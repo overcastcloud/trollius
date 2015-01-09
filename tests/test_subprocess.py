@@ -128,7 +128,9 @@ class SubprocessMixin(object):
             'sys.stdout.flush()',
             'time.sleep(3600)'))
         args = [sys.executable, '-c', code]
-        create = asyncio.create_subprocess_exec(*args, loop=self.loop, stdout=subprocess.PIPE)
+        create = asyncio.create_subprocess_exec(*args,
+                                                stdout=subprocess.PIPE,
+                                                loop=self.loop)
         proc = self.loop.run_until_complete(create)
 
         @asyncio.coroutine
@@ -235,6 +237,32 @@ class SubprocessMixin(object):
         output, exitcode = self.loop.run_until_complete(len_message(b'abc'))
         self.assertEqual(output.rstrip(), b'3')
         self.assertEqual(exitcode, 0)
+
+    def test_cancel_process_wait(self):
+        # Issue #23140: cancel Process.wait()
+
+        @asyncio.coroutine
+        def cancel_wait():
+            proc = yield From(asyncio.create_subprocess_exec(
+                                          *PROGRAM_BLOCKED,
+                                          loop=self.loop))
+
+            # Create an internal future waiting on the process exit
+            task = self.loop.create_task(proc.wait())
+            self.loop.call_soon(task.cancel)
+            try:
+                yield From(task)
+            except asyncio.CancelledError:
+                pass
+
+            # Cancel the future
+            task.cancel()
+
+            # Kill the process and wait until it is done
+            proc.kill()
+            yield From(proc.wait())
+
+        self.loop.run_until_complete(cancel_wait())
 
 
 if sys.platform != 'win32':

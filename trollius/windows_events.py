@@ -416,7 +416,8 @@ class IocpProactor(object):
             else:
                 return windows_utils.PipeHandle(handle)
 
-        return self._register(ov, None, finish_connect_pipe, wait_for_post=True)
+        return self._register(ov, None, finish_connect_pipe,
+                              wait_for_post=True)
 
     def wait_for_handle(self, handle, timeout=None):
         """Wait for a handle.
