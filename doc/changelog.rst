@@ -5,6 +5,9 @@ Change log
 Version 1.0.5
 =============
 
+* Python issue #23140: Fix cancellation of Process.wait(). Check the state of
+  the waiter future before setting its result.
+* Python issue #23046: Expose the BaseEventLoop class in the asyncio namespace
 * Python issue #22926: In debug mode, call_soon(), call_at() and call_later()
   methods of BaseEventLoop now use the identifier of the current thread to
   ensure that they are called from the thread running the event loop. Before,
