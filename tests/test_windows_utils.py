@@ -116,7 +116,8 @@ class PipeTests(unittest.TestCase):
 
         # check garbage collection of p closes handle
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", "",  ResourceWarning)
+            if sys.version_info >= (3, 4):
+                warnings.filterwarnings("ignore", "",  ResourceWarning)
             del p
             support.gc_collect()
         try:
@@ -172,9 +173,11 @@ class PopenTests(unittest.TestCase):
         self.assertTrue(msg.upper().rstrip().startswith(out))
         self.assertTrue(b"stderr".startswith(err))
 
-        # The context manager calls wait() and closes resources
-        with p:
-            pass
+        # cleanup the Popen object
+        p.wait()
+        p.stdout.close()
+        p.stderr.close()
+        p.stdin.close()
 
 
 if __name__ == '__main__':
