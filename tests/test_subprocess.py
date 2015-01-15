@@ -192,6 +192,19 @@ class SubprocessMixin(object):
                 'sys.stdout.write("x" * %s)' % size,
                 'sys.stdout.flush()',
             ))
+
+            connect_read_pipe = self.loop.connect_read_pipe
+
+            @asyncio.coroutine
+            def connect_read_pipe_mock(*args, **kw):
+                connect = connect_read_pipe(*args, **kw)
+                transport, protocol = yield From(connect)
+                transport.pause_reading = mock.Mock()
+                transport.resume_reading = mock.Mock()
+                raise Return(transport, protocol)
+
+            self.loop.connect_read_pipe = connect_read_pipe_mock
+
             proc = yield From(asyncio.create_subprocess_exec(
                                          sys.executable, '-c', code,
                                          stdin=asyncio.subprocess.PIPE,
@@ -199,8 +212,6 @@ class SubprocessMixin(object):
                                          limit=limit,
                                          loop=self.loop))
             stdout_transport = proc._transport.get_pipe_transport(1)
-            stdout_transport.pause_reading = mock.Mock()
-            stdout_transport.resume_reading = mock.Mock()
 
             stdout, stderr = yield From(proc.communicate())
 
