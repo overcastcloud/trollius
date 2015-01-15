@@ -261,22 +261,8 @@ class StreamWriter(object):
         self._reader = reader
         self._loop = loop
 
-    def close(self):
-        if self._transport is None:
-            return
-        self._transport.close()
-        self._transport = None
-
-    def _check_closed(self):
-        if self._transport is None:
-            raise RuntimeError('StreamWriter is closed')
-
     def __repr__(self):
-        info = [self.__class__.__name__]
-        if self._transport is not None:
-            info.append('transport=%r' % self._transport)
-        else:
-            info.append('closed')
+        info = [self.__class__.__name__, 'transport=%r' % self._transport]
         if self._reader is not None:
             info.append('reader=%r' % self._reader)
         return '<%s>' % ' '.join(info)
@@ -286,23 +272,21 @@ class StreamWriter(object):
         return self._transport
 
     def write(self, data):
-        self._check_closed()
         self._transport.write(data)
 
     def writelines(self, data):
-        self._check_closed()
         self._transport.writelines(data)
 
     def write_eof(self):
-        self._check_closed()
         return self._transport.write_eof()
 
     def can_write_eof(self):
-        self._check_closed()
         return self._transport.can_write_eof()
 
+    def close(self):
+        return self._transport.close()
+
     def get_extra_info(self, name, default=None):
-        self._check_closed()
         return self._transport.get_extra_info(name, default)
 
     @coroutine
@@ -314,7 +298,6 @@ class StreamWriter(object):
           w.write(data)
           yield From(w.drain())
         """
-        self._check_closed()
         if self._reader is not None:
             exc = self._reader.exception()
             if exc is not None:
