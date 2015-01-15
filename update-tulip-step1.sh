@@ -6,4 +6,4 @@ hg pull https://code.google.com/p/tulip/
 hg update
 hg update trollius
 hg merge default
-echo "Now fix merge conflicts"
+echo "Now run ./update-tulip-step2.sh"

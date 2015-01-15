@@ -37,3 +37,5 @@ if $(grep -q -F 'super()' */*.py); then
     grep -F 'super()' */*.py
     exit 1
 fi
+
+echo "Now run ./update-tulip-step3.sh"
