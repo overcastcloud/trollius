@@ -5,6 +5,69 @@ Change log
 Version 1.0.5
 =============
 
+SSL::
+
+    Python issue #22560: New SSL implementation based on ssl.MemoryBIO
+
+    The new SSL implementation is based on the new ssl.MemoryBIO which is only
+    available on Python 3.5. On Python 3.4 and older, the legacy SSL implementation
+    (using SSL_write, SSL_read, etc.) is used. The proactor event loop only
+    supports the new implementation.
+
+    The new asyncio.sslproto module adds _SSLPipe, SSLProtocol and
+    _SSLProtocolTransport classes. _SSLPipe allows to "wrap" or "unwrap" a socket
+    (switch between cleartext and SSL/TLS).
+
+    Patch written by Antoine Pitrou. sslproto.py is based on gruvi/ssl.py of the
+    gruvi project written by Geert Jansen.
+
+    This change adds SSL support to ProactorEventLoop on Python 3.5 and newer!
+
+    It becomes also possible to implement STARTTTLS: switch a cleartext socket to
+    SSL.
+
+API changes:
+
+* Python issue #23209, #23225: selectors.BaseSelector.get_key() now raises a
+  RuntimeError if the selector is closed. And selectors.BaseSelector.close()
+  now clears its internal reference to the selector mapping to break a
+  reference cycle. Initial patch written by Martin Richard.
+
+Bugfixes:
+
+* Close the transport on subprocess creation failure
+* Fix _ProactorBasePipeTransport.close(). Set the _read_fut attribute to None
+  after cancelling it.
+* Python issue #23243: Fix _UnixWritePipeTransport.close(). Do nothing if the
+  transport is already closed. Before it was not possible to close the
+  transport twice.
+* Python issue #23242: SubprocessStreamProtocol now closes the subprocess
+  transport at subprocess exit. Clear also its reference to the transport.
+* Fix BaseEventLoop._create_connection_transport(). Close the transport if the
+  creation of the transport (if the waiter) gets an exception.
+* Python issue #23197: On SSL handshake failure, check if the waiter is
+  cancelled before setting its exception.
+* Python issue #23173: Fix SubprocessStreamProtocol.connection_made() to handle
+  cancelled waiter.
+* Python issue #23173: If an exception is raised during the creation of a
+  subprocess, kill the subprocess (close pipes, kill and read the return
+  status). Log an error in such case.
+* Python issue #23209: Break some reference cycles in asyncio. Patch written by
+  Martin Richard.
+
+Changes:
+
+* Replace test_selectors.py with the file of Python 3.5 adapted for asyncio and
+  Python 3.3.
+* Tulip issue #184: FlowControlMixin constructor now get the event loop if the
+  loop parameter is not set.
+* _ProactorBasePipeTransport now sets the _sock attribute to None when the
+  transport is closed.
+* Python issue #23219: cancelling wait_for() now cancels the task
+* Python issue #23243: Close explicitly event loops and transports in tests
+* StreamWriter: close() now clears the reference to the transport. StreamWriter
+  now raises an exception if it is closed: write(), writelines(), write_eof(),
+  can_write_eof(), get_extra_info(), drain().
 * Python issue #23140: Fix cancellation of Process.wait(). Check the state of
   the waiter future before setting its result.
 * Python issue #23046: Expose the BaseEventLoop class in the asyncio namespace
