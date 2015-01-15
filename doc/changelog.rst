@@ -65,9 +65,6 @@ Changes:
   transport is closed.
 * Python issue #23219: cancelling wait_for() now cancels the task
 * Python issue #23243: Close explicitly event loops and transports in tests
-* StreamWriter: close() now clears the reference to the transport. StreamWriter
-  now raises an exception if it is closed: write(), writelines(), write_eof(),
-  can_write_eof(), get_extra_info(), drain().
 * Python issue #23140: Fix cancellation of Process.wait(). Check the state of
   the waiter future before setting its result.
 * Python issue #23046: Expose the BaseEventLoop class in the asyncio namespace
