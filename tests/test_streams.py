@@ -18,9 +18,6 @@ from trollius import test_utils
 from trollius.test_utils import mock
 
 
-SHORT_DELAY = 0.010
-
-
 class StreamReaderTests(test_utils.TestCase):
 
     DATA = b'line1\nline2\nline3\n'
@@ -150,7 +147,7 @@ class StreamReaderTests(test_utils.TestCase):
 
         def cb():
             stream.feed_data(self.DATA)
-        self.loop.call_later(SHORT_DELAY, cb)
+        self.loop.call_soon(cb)
 
         data = self.loop.run_until_complete(read_task)
         self.assertEqual(self.DATA, data)
@@ -174,7 +171,7 @@ class StreamReaderTests(test_utils.TestCase):
 
         def cb():
             stream.feed_eof()
-        self.loop.call_later(SHORT_DELAY, cb)
+        self.loop.call_soon(cb)
 
         data = self.loop.run_until_complete(read_task)
         self.assertEqual(b'', data)
@@ -189,7 +186,7 @@ class StreamReaderTests(test_utils.TestCase):
             stream.feed_data(b'chunk1\n')
             stream.feed_data(b'chunk2')
             stream.feed_eof()
-        self.loop.call_later(SHORT_DELAY, cb)
+        self.loop.call_soon(cb)
 
         data = self.loop.run_until_complete(read_task)
 
@@ -218,7 +215,7 @@ class StreamReaderTests(test_utils.TestCase):
             stream.feed_data(b'chunk2 ')
             stream.feed_data(b'chunk3 ')
             stream.feed_data(b'\n chunk4')
-        self.loop.call_later(SHORT_DELAY, cb)
+        self.loop.call_soon(cb)
 
         line = self.loop.run_until_complete(read_task)
         self.assertEqual(b'chunk1 chunk2 chunk3 \n', line)

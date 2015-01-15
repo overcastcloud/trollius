@@ -398,6 +398,7 @@ class StreamReader(object):
             else:
                 self._paused = True
 
+    @coroutine
     def _wait_for_data(self, func_name):
         """Wait until feed_data() or feed_eof() is called."""
         # StreamReader uses a future to link the protocol feed_data() method
@@ -407,6 +408,13 @@ class StreamReader(object):
         if self._waiter is not None:
             raise RuntimeError('%s() called while another coroutine is '
                                'already waiting for incoming data' % func_name)
+
+        # In asyncio, there is no need to recheck if we got data or EOF thanks
+        # to "yield from". In trollius, a StreamReader method can be called
+        # after the _wait_for_data() coroutine is scheduled and before it is
+        # really executed.
+        if self._buffer or self._eof:
+            return
 
         self._waiter = futures.Future(loop=self._loop)
         try:
