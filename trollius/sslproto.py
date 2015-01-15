@@ -43,6 +43,11 @@ _DO_HANDSHAKE = "DO_HANDSHAKE"
 _WRAPPED = "WRAPPED"
 _SHUTDOWN = "SHUTDOWN"
 
+if hasattr(ssl, 'CertificateError'):
+    _SSL_ERRORS = (ssl.SSLError, ssl.CertificateError)
+else:
+    _SSL_ERRORS = ssl.SSLError
+
 
 class _SSLPipe(object):
     """An SSL "Pipe".
@@ -224,7 +229,7 @@ class _SSLPipe(object):
             elif self._state == _UNWRAPPED:
                 # Drain possible plaintext data after close_notify.
                 appdata.append(self._incoming.read())
-        except (ssl.SSLError, ssl.CertificateError) as exc:
+        except _SSL_ERRORS as exc:
             if getattr(exc, 'errno', None) not in (
                     ssl.SSL_ERROR_WANT_READ, ssl.SSL_ERROR_WANT_WRITE,
                     ssl.SSL_ERROR_SYSCALL):
@@ -546,7 +551,8 @@ class SSLProtocol(protocols.Protocol):
                     ssl.match_hostname(peercert, self._server_hostname)
         except BaseException as exc:
             if self._loop.get_debug():
-                if isinstance(exc, ssl.CertificateError):
+                if (hasattr(ssl, 'CertificateError')
+                and isinstance(exc, ssl.CertificateError)):
                     logger.warning("%r: SSL handshake failed "
                                    "on verifying the certificate",
                                    self, exc_info=True)
