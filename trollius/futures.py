@@ -33,7 +33,6 @@ STACK_DEBUG = logging.DEBUG - 1  # heavy-duty debugging
 
 class InvalidStateError(Error):
     """The operation is not allowed in this state."""
-    # TODO: Show the future, its state, the method, and the required state.
 
 
 class _TracebackLogger(object):
@@ -446,5 +445,5 @@ def wrap_future(fut, loop=None):
     new_future.add_done_callback(_check_cancel_other)
     fut.add_done_callback(
         lambda future: loop.call_soon_threadsafe(
-            new_future._copy_state, fut))
+            new_future._copy_state, future))
     return new_future

@@ -34,6 +34,7 @@ from trollius import compat
 from trollius import events
 from trollius import proactor_events
 from trollius import selector_events
+from trollius import sslproto
 from trollius import test_support as support
 from trollius import test_utils
 from trollius.py33_exceptions import (wrap_error,
@@ -662,6 +663,10 @@ class EventLoopTestsMixin(object):
                 *httpd.address)
             self._test_create_ssl_connection(httpd, create_connection)
 
+    def test_legacy_create_ssl_connection(self):
+        with test_utils.force_legacy_ssl_support():
+            self.test_create_ssl_connection()
+
     @test_utils.skipIf(ssl is None, 'No ssl module')
     @test_utils.skipUnless(hasattr(socket, 'AF_UNIX'), 'No UNIX Sockets')
     def test_create_ssl_unix_connection(self):
@@ -677,6 +682,10 @@ class EventLoopTestsMixin(object):
 
             self._test_create_ssl_connection(httpd, create_connection,
                                              check_sockname)
+
+    def test_legacy_create_ssl_unix_connection(self):
+        with test_utils.force_legacy_ssl_support():
+            self.test_create_ssl_unix_connection()
 
     def test_create_connection_local_addr(self):
         with test_utils.run_test_server() as httpd:
@@ -842,6 +851,10 @@ class EventLoopTestsMixin(object):
         # stop serving
         server.close()
 
+    def test_legacy_create_server_ssl(self):
+        with test_utils.force_legacy_ssl_support():
+            self.test_create_server_ssl()
+
     @test_utils.skipIf(ssl is None, 'No ssl module')
     @test_utils.skipUnless(hasattr(socket, 'AF_UNIX'), 'No UNIX Sockets')
     def test_create_unix_server_ssl(self):
@@ -873,6 +886,10 @@ class EventLoopTestsMixin(object):
         # stop serving
         server.close()
 
+    def test_legacy_create_unix_server_ssl(self):
+        with test_utils.force_legacy_ssl_support():
+            self.test_create_unix_server_ssl()
+
     @test_utils.skipIf(ssl is None, 'No ssl module')
     @test_utils.skipIf(asyncio.BACKPORT_SSL_CONTEXT, 'need ssl.SSLContext')
     def test_create_server_ssl_verify_failed(self):
@@ -897,6 +914,10 @@ class EventLoopTestsMixin(object):
         # close connection
         self.assertIsNone(proto.transport)
         server.close()
+
+    def test_legacy_create_server_ssl_verify_failed(self):
+        with test_utils.force_legacy_ssl_support():
+            self.test_create_server_ssl_verify_failed()
 
     @test_utils.skipIf(ssl is None, 'No ssl module')
     @test_utils.skipUnless(hasattr(socket, 'AF_UNIX'), 'No UNIX Sockets')
@@ -924,6 +945,10 @@ class EventLoopTestsMixin(object):
         # close connection
         self.assertIsNone(proto.transport)
         server.close()
+
+    def test_legacy_create_unix_server_ssl_verify_failed(self):
+        with test_utils.force_legacy_ssl_support():
+            self.test_create_unix_server_ssl_verify_failed()
 
     @test_utils.skipIf(ssl is None, 'No ssl module')
     def test_create_server_ssl_match_failed(self):
@@ -961,6 +986,10 @@ class EventLoopTestsMixin(object):
 
         server.close()
 
+    def test_legacy_create_server_ssl_match_failed(self):
+        with test_utils.force_legacy_ssl_support():
+            self.test_create_server_ssl_match_failed()
+
     @test_utils.skipIf(ssl is None, 'No ssl module')
     @test_utils.skipUnless(hasattr(socket, 'AF_UNIX'), 'No UNIX Sockets')
     def test_create_unix_server_ssl_verified(self):
@@ -986,6 +1015,11 @@ class EventLoopTestsMixin(object):
         proto.transport.close()
         client.close()
         server.close()
+        self.loop.run_until_complete(proto.done)
+
+    def test_legacy_create_unix_server_ssl_verified(self):
+        with test_utils.force_legacy_ssl_support():
+            self.test_create_unix_server_ssl_verified()
 
     @test_utils.skipIf(ssl is None, 'No ssl module')
     def test_create_server_ssl_verified(self):
@@ -1001,18 +1035,22 @@ class EventLoopTestsMixin(object):
         if hasattr(sslcontext_client, 'check_hostname'):
             sslcontext_client.check_hostname = True
 
-        if not asyncio.BACKPORT_SSL_CONTEXT:
-            # Connection succeeds with correct CA and server hostname.
-            f_c = self.loop.create_connection(MyProto, host, port,
-                                              ssl=sslcontext_client,
-                                              server_hostname='localhost')
-            client, pr = self.loop.run_until_complete(f_c)
+        # Connection succeeds with correct CA and server hostname.
+        f_c = self.loop.create_connection(MyProto, host, port,
+                                          ssl=sslcontext_client,
+                                          server_hostname='localhost')
+        client, pr = self.loop.run_until_complete(f_c)
 
-            # close connection
-            proto.transport.close()
-            client.close()
+        # close connection
+        proto.transport.close()
+        client.close()
 
         server.close()
+        self.loop.run_until_complete(proto.done)
+
+    def test_legacy_create_server_ssl_verified(self):
+        with test_utils.force_legacy_ssl_support():
+            self.test_create_server_ssl_verified()
 
     def test_create_server_sock(self):
         non_local = {'proto': asyncio.Future(loop=self.loop)}
@@ -1584,6 +1622,7 @@ class SubprocessTestsMixin(object):
         self.assertTrue(all(f.done() for f in proto.disconnects.values()))
         self.assertEqual(proto.data[1].rstrip(b'\r\n'), b'Python')
         self.assertEqual(proto.data[2], b'')
+        transp.close()
 
     def test_subprocess_exitcode(self):
         connect = self.loop.subprocess_shell(
@@ -1593,6 +1632,7 @@ class SubprocessTestsMixin(object):
         self.assertIsInstance(proto, MySubprocessProtocol)
         self.loop.run_until_complete(proto.completed)
         self.assertEqual(7, proto.returncode)
+        transp.close()
 
     def test_subprocess_close_after_finish(self):
         connect = self.loop.subprocess_shell(
@@ -1620,6 +1660,7 @@ class SubprocessTestsMixin(object):
         transp.kill()
         self.loop.run_until_complete(proto.completed)
         self.check_killed(proto.returncode)
+        transp.close()
 
     def test_subprocess_terminate(self):
         prog = os.path.join(os.path.dirname(__file__), 'echo.py')
@@ -1634,6 +1675,7 @@ class SubprocessTestsMixin(object):
         transp.terminate()
         self.loop.run_until_complete(proto.completed)
         self.check_terminated(proto.returncode)
+        transp.close()
 
     @test_utils.skipIf(sys.platform == 'win32', "Don't have SIGHUP")
     def test_subprocess_send_signal(self):
@@ -1649,6 +1691,7 @@ class SubprocessTestsMixin(object):
         transp.send_signal(signal.SIGHUP)
         self.loop.run_until_complete(proto.completed)
         self.assertEqual(-signal.SIGHUP, proto.returncode)
+        transp.close()
 
     def test_subprocess_stderr(self):
         prog = os.path.join(os.path.dirname(__file__), 'echo2.py')
@@ -1784,20 +1827,36 @@ if sys.platform == 'win32':
         def create_event_loop(self):
             return asyncio.ProactorEventLoop()
 
-        def test_create_ssl_connection(self):
-            raise unittest.SkipTest("IocpEventLoop incompatible with SSL")
+        if not sslproto._is_sslproto_available():
+            def test_create_ssl_connection(self):
+                raise unittest.SkipTest("need python 3.5 (ssl.MemoryBIO)")
 
-        def test_create_server_ssl(self):
-            raise unittest.SkipTest("IocpEventLoop incompatible with SSL")
+            def test_create_server_ssl(self):
+                raise unittest.SkipTest("need python 3.5 (ssl.MemoryBIO)")
 
-        def test_create_server_ssl_verify_failed(self):
-            raise unittest.SkipTest("IocpEventLoop incompatible with SSL")
+            def test_create_server_ssl_verify_failed(self):
+                raise unittest.SkipTest("need python 3.5 (ssl.MemoryBIO)")
 
-        def test_create_server_ssl_match_failed(self):
-            raise unittest.SkipTest("IocpEventLoop incompatible with SSL")
+            def test_create_server_ssl_match_failed(self):
+                raise unittest.SkipTest("need python 3.5 (ssl.MemoryBIO)")
 
-        def test_create_server_ssl_verified(self):
-            raise unittest.SkipTest("IocpEventLoop incompatible with SSL")
+            def test_create_server_ssl_verified(self):
+                raise unittest.SkipTest("need python 3.5 (ssl.MemoryBIO)")
+
+        def test_legacy_create_ssl_connection(self):
+            raise unittest.SkipTest("IocpEventLoop incompatible with legacy SSL")
+
+        def test_legacy_create_server_ssl(self):
+            raise unittest.SkipTest("IocpEventLoop incompatible with legacy SSL")
+
+        def test_legacy_create_server_ssl_verify_failed(self):
+            raise unittest.SkipTest("IocpEventLoop incompatible with legacy SSL")
+
+        def test_legacy_create_server_ssl_match_failed(self):
+            raise unittest.SkipTest("IocpEventLoop incompatible with legacy SSL")
+
+        def test_legacy_create_server_ssl_verified(self):
+            raise unittest.SkipTest("IocpEventLoop incompatible with legacy SSL")
 
         def test_reader_callback(self):
             raise unittest.SkipTest("IocpEventLoop does not have add_reader()")

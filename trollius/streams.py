@@ -148,7 +148,10 @@ class FlowControlMixin(protocols.Protocol):
     """
 
     def __init__(self, loop=None):
-        self._loop = loop  # May be None; we may never need it.
+        if loop is None:
+            self._loop = events.get_event_loop()
+        else:
+            self._loop = loop
         self._paused = False
         self._drain_waiter = None
         self._connection_lost = False
@@ -258,8 +261,22 @@ class StreamWriter(object):
         self._reader = reader
         self._loop = loop
 
+    def close(self):
+        if self._transport is None:
+            return
+        self._transport.close()
+        self._transport = None
+
+    def _check_closed(self):
+        if self._transport is None:
+            raise RuntimeError('StreamWriter is closed')
+
     def __repr__(self):
-        info = [self.__class__.__name__, 'transport=%r' % self._transport]
+        info = [self.__class__.__name__]
+        if self._transport is not None:
+            info.append('transport=%r' % self._transport)
+        else:
+            info.append('closed')
         if self._reader is not None:
             info.append('reader=%r' % self._reader)
         return '<%s>' % ' '.join(info)
@@ -269,21 +286,23 @@ class StreamWriter(object):
         return self._transport
 
     def write(self, data):
+        self._check_closed()
         self._transport.write(data)
 
     def writelines(self, data):
+        self._check_closed()
         self._transport.writelines(data)
 
     def write_eof(self):
+        self._check_closed()
         return self._transport.write_eof()
 
     def can_write_eof(self):
+        self._check_closed()
         return self._transport.can_write_eof()
 
-    def close(self):
-        return self._transport.close()
-
     def get_extra_info(self, name, default=None):
+        self._check_closed()
         return self._transport.get_extra_info(name, default)
 
     @coroutine
@@ -295,6 +314,7 @@ class StreamWriter(object):
           w.write(data)
           yield From(w.drain())
         """
+        self._check_closed()
         if self._reader is not None:
             exc = self._reader.exception()
             if exc is not None:
@@ -309,11 +329,12 @@ class StreamReader(object):
         # it also doubles as half the buffer limit.
         self._limit = limit
         if loop is None:
-            loop = events.get_event_loop()
-        self._loop = loop
+            self._loop = events.get_event_loop()
+        else:
+            self._loop = loop
         self._buffer = bytearray()
-        self._eof = False  # Whether we're done.
-        self._waiter = None  # A future.
+        self._eof = False    # Whether we're done.
+        self._waiter = None  # A future used by _wait_for_data()
         self._exception = None
         self._transport = None
         self._paused = False
@@ -330,6 +351,14 @@ class StreamReader(object):
             if not waiter.cancelled():
                 waiter.set_exception(exc)
 
+    def _wakeup_waiter(self):
+        """Wakeup read() or readline() function waiting for data or EOF."""
+        waiter = self._waiter
+        if waiter is not None:
+            self._waiter = None
+            if not waiter.cancelled():
+                waiter.set_result(None)
+
     def set_transport(self, transport):
         assert self._transport is None, 'Transport already set'
         self._transport = transport
@@ -341,11 +370,7 @@ class StreamReader(object):
 
     def feed_eof(self):
         self._eof = True
-        waiter = self._waiter
-        if waiter is not None:
-            self._waiter = None
-            if not waiter.cancelled():
-                waiter.set_result(True)
+        self._wakeup_waiter()
 
     def at_eof(self):
         """Return True if the buffer is empty and 'feed_eof' was called."""
@@ -358,12 +383,7 @@ class StreamReader(object):
             return
 
         self._buffer.extend(data)
-
-        waiter = self._waiter
-        if waiter is not None:
-            self._waiter = None
-            if not waiter.cancelled():
-                waiter.set_result(False)
+        self._wakeup_waiter()
 
         if (self._transport is not None and
             not self._paused and
@@ -378,7 +398,8 @@ class StreamReader(object):
             else:
                 self._paused = True
 
-    def _create_waiter(self, func_name):
+    def _wait_for_data(self, func_name):
+        """Wait until feed_data() or feed_eof() is called."""
         # StreamReader uses a future to link the protocol feed_data() method
         # to a read coroutine. Running two read coroutines at the same time
         # would have an unexpected behaviour. It would not possible to know
@@ -386,7 +407,12 @@ class StreamReader(object):
         if self._waiter is not None:
             raise RuntimeError('%s() called while another coroutine is '
                                'already waiting for incoming data' % func_name)
-        return futures.Future(loop=self._loop)
+
+        self._waiter = futures.Future(loop=self._loop)
+        try:
+            yield From(self._waiter)
+        finally:
+            self._waiter = None
 
     @coroutine
     def readline(self):
@@ -416,11 +442,7 @@ class StreamReader(object):
                 break
 
             if not_enough:
-                self._waiter = self._create_waiter('readline')
-                try:
-                    yield From(self._waiter)
-                finally:
-                    self._waiter = None
+                yield From(self._wait_for_data('readline'))
 
         self._maybe_resume_transport()
         raise Return(bytes(line))
@@ -447,11 +469,7 @@ class StreamReader(object):
             raise Return(b''.join(blocks))
         else:
             if not self._buffer and not self._eof:
-                self._waiter = self._create_waiter('read')
-                try:
-                    yield From(self._waiter)
-                finally:
-                    self._waiter = None
+                yield From(self._wait_for_data('read'))
 
         if n < 0 or len(self._buffer) <= n:
             data = bytes(self._buffer)

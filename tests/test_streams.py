@@ -18,6 +18,9 @@ from trollius import test_utils
 from trollius.test_utils import mock
 
 
+SHORT_DELAY = 0.010
+
+
 class StreamReaderTests(test_utils.TestCase):
 
     DATA = b'line1\nline2\nline3\n'
@@ -147,7 +150,7 @@ class StreamReaderTests(test_utils.TestCase):
 
         def cb():
             stream.feed_data(self.DATA)
-        self.loop.call_soon(cb)
+        self.loop.call_later(SHORT_DELAY, cb)
 
         data = self.loop.run_until_complete(read_task)
         self.assertEqual(self.DATA, data)
@@ -171,7 +174,7 @@ class StreamReaderTests(test_utils.TestCase):
 
         def cb():
             stream.feed_eof()
-        self.loop.call_soon(cb)
+        self.loop.call_later(SHORT_DELAY, cb)
 
         data = self.loop.run_until_complete(read_task)
         self.assertEqual(b'', data)
@@ -186,7 +189,7 @@ class StreamReaderTests(test_utils.TestCase):
             stream.feed_data(b'chunk1\n')
             stream.feed_data(b'chunk2')
             stream.feed_eof()
-        self.loop.call_soon(cb)
+        self.loop.call_later(SHORT_DELAY, cb)
 
         data = self.loop.run_until_complete(read_task)
 
@@ -215,7 +218,7 @@ class StreamReaderTests(test_utils.TestCase):
             stream.feed_data(b'chunk2 ')
             stream.feed_data(b'chunk3 ')
             stream.feed_data(b'\n chunk4')
-        self.loop.call_soon(cb)
+        self.loop.call_later(SHORT_DELAY, cb)
 
         line = self.loop.run_until_complete(read_task)
         self.assertEqual(b'chunk1 chunk2 chunk3 \n', line)
@@ -416,7 +419,7 @@ class StreamReaderTests(test_utils.TestCase):
 
         @asyncio.coroutine
         def set_err():
-            stream.set_exception(ValueError())
+            self.loop.call_soon(stream.set_exception, ValueError())
 
         @asyncio.coroutine
         def readline():
@@ -628,6 +631,25 @@ os.close(fd)
         os.close(wfd)
         data = self.loop.run_until_complete(reader.read(-1))
         self.assertEqual(data, b'data')
+
+    def test_streamreader_constructor(self):
+        self.addCleanup(asyncio.set_event_loop, None)
+        asyncio.set_event_loop(self.loop)
+
+        # Tulip issue #184: Ensure that StreamReaderProtocol constructor
+        # retrieves the current loop if the loop parameter is not set
+        reader = asyncio.StreamReader()
+        self.assertIs(reader._loop, self.loop)
+
+    def test_streamreaderprotocol_constructor(self):
+        self.addCleanup(asyncio.set_event_loop, None)
+        asyncio.set_event_loop(self.loop)
+
+        # Tulip issue #184: Ensure that StreamReaderProtocol constructor
+        # retrieves the current loop if the loop parameter is not set
+        reader = mock.Mock()
+        protocol = asyncio.StreamReaderProtocol(reader)
+        self.assertIs(protocol._loop, self.loop)
 
 
 if __name__ == '__main__':

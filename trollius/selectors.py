@@ -178,6 +178,8 @@ class BaseSelector(object):
         SelectorKey for this file object
         """
         mapping = self.get_map()
+        if mapping is None:
+            raise RuntimeError('Selector is closed')
         try:
             return mapping[fileobj]
         except KeyError:
@@ -260,6 +262,7 @@ class _BaseSelectorImpl(BaseSelector):
 
     def close(self):
         self._fd_to_key.clear()
+        self._map = None
 
     def get_map(self):
         return self._map

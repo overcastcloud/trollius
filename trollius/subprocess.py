@@ -63,7 +63,9 @@ class SubprocessStreamProtocol(streams.FlowControlMixin,
                                               protocol=self,
                                               reader=None,
                                               loop=self._loop)
-        self.waiter.set_result(None)
+
+        if not self.waiter.cancelled():
+            self.waiter.set_result(None)
 
     def pipe_data_received(self, fd, data):
         if fd == 1:
@@ -95,8 +97,11 @@ class SubprocessStreamProtocol(streams.FlowControlMixin,
                 reader.set_exception(exc)
 
     def process_exited(self):
-        # wake up futures waiting for wait()
         returncode = self._transport.get_returncode()
+        self._transport.close()
+        self._transport = None
+
+        # wake up futures waiting for wait()
         while self._waiters:
             waiter = self._waiters.popleft()
             if not waiter.cancelled():
@@ -222,10 +227,14 @@ def create_subprocess_shell(cmd, **kwds):
     protocol_factory = lambda: SubprocessStreamProtocol(limit=limit,
                                                         loop=loop)
     transport, protocol = yield From(loop.subprocess_shell(
-                                       protocol_factory,
-                                       cmd, stdin=stdin, stdout=stdout,
-                                       stderr=stderr, **kwds))
-    yield From(protocol.waiter)
+                                            protocol_factory,
+                                            cmd, stdin=stdin, stdout=stdout,
+                                            stderr=stderr, **kwds))
+    try:
+        yield From(protocol.waiter)
+    except:
+        transport._kill_wait()
+        raise
     raise Return(Process(transport, protocol, loop))
 
 @coroutine
@@ -240,9 +249,13 @@ def create_subprocess_exec(program, *args, **kwds):
     protocol_factory = lambda: SubprocessStreamProtocol(limit=limit,
                                                         loop=loop)
     transport, protocol = yield From(loop.subprocess_exec(
-                                       protocol_factory,
-                                       program, *args,
-                                       stdin=stdin, stdout=stdout,
-                                       stderr=stderr, **kwds))
-    yield From(protocol.waiter)
+                                            protocol_factory,
+                                            program, *args,
+                                            stdin=stdin, stdout=stdout,
+                                            stderr=stderr, **kwds))
+    try:
+        yield From(protocol.waiter)
+    except:
+        transport._kill_wait()
+        raise
     raise Return(Process(transport, protocol, loop))

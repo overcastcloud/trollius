@@ -410,6 +410,7 @@ class TestLoop(base_events.BaseEventLoop):
             self._time += advance
 
     def close(self):
+        super(TestLoop, self).close()
         if self._check_on_close:
             try:
                 self._gen.send(0)
@@ -579,3 +580,8 @@ def mock_nonblocking_socket():
     sock = mock.Mock(socket.socket)
     sock.gettimeout.return_value = 0.0
     return sock
+
+
+def force_legacy_ssl_support():
+    return mock.patch('trollius.sslproto._is_sslproto_available',
+                      return_value=False)

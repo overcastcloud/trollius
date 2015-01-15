@@ -71,6 +71,8 @@ class BaseSubprocessTransport(transports.SubprocessTransport):
 
     def close(self):
         for proto in self._pipes.values():
+            if proto is None:
+                continue
             proto.pipe.close()
         if self._returncode is None:
             self.terminate()
@@ -96,32 +98,61 @@ class BaseSubprocessTransport(transports.SubprocessTransport):
     def kill(self):
         self._proc.kill()
 
+    def _kill_wait(self):
+        """Close pipes, kill the subprocess and read its return status.
+
+        Function called when an exception is raised during the creation
+        of a subprocess.
+        """
+        if self._loop.get_debug():
+            logger.warning('Exception during subprocess creation, '
+                           'kill the subprocess %r',
+                           self,
+                           exc_info=True)
+
+        proc = self._proc
+        if proc.stdout:
+            proc.stdout.close()
+        if proc.stderr:
+            proc.stderr.close()
+        if proc.stdin:
+            proc.stdin.close()
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        self._returncode = proc.wait()
+
     @coroutine
     def _post_init(self):
-        proc = self._proc
-        loop = self._loop
-        if proc.stdin is not None:
-            _, pipe = yield From(loop.connect_write_pipe(
-                lambda: WriteSubprocessPipeProto(self, 0),
-                proc.stdin))
-            self._pipes[0] = pipe
-        if proc.stdout is not None:
-            _, pipe = yield From(loop.connect_read_pipe(
-                lambda: ReadSubprocessPipeProto(self, 1),
-                proc.stdout))
-            self._pipes[1] = pipe
-        if proc.stderr is not None:
-            _, pipe = yield From(loop.connect_read_pipe(
-                lambda: ReadSubprocessPipeProto(self, 2),
-                proc.stderr))
-            self._pipes[2] = pipe
+        try:
+            proc = self._proc
+            loop = self._loop
+            if proc.stdin is not None:
+                _, pipe = yield From(loop.connect_write_pipe(
+                    lambda: WriteSubprocessPipeProto(self, 0),
+                    proc.stdin))
+                self._pipes[0] = pipe
+            if proc.stdout is not None:
+                _, pipe = yield From(loop.connect_read_pipe(
+                    lambda: ReadSubprocessPipeProto(self, 1),
+                    proc.stdout))
+                self._pipes[1] = pipe
+            if proc.stderr is not None:
+                _, pipe = yield From(loop.connect_read_pipe(
+                    lambda: ReadSubprocessPipeProto(self, 2),
+                    proc.stderr))
+                self._pipes[2] = pipe
 
-        assert self._pending_calls is not None
+            assert self._pending_calls is not None
 
-        self._loop.call_soon(self._protocol.connection_made, self)
-        for callback, data in self._pending_calls:
-            self._loop.call_soon(callback, *data)
-        self._pending_calls = None
+            self._loop.call_soon(self._protocol.connection_made, self)
+            for callback, data in self._pending_calls:
+                self._loop.call_soon(callback, *data)
+            self._pending_calls = None
+        except:
+            self._kill_wait()
+            raise
 
     def _call(self, cb, *data):
         if self._pending_calls is not None:
@@ -182,6 +213,7 @@ class WriteSubprocessPipeProto(protocols.BaseProtocol):
     def connection_lost(self, exc):
         self.disconnected = True
         self.proc._pipe_connection_lost(self.fd, exc)
+        self.proc = None
 
     def pause_writing(self):
         self.proc._protocol.pause_writing()

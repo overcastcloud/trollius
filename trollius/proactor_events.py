@@ -11,6 +11,7 @@ import socket
 from . import base_events
 from . import constants
 from . import futures
+from . import sslproto
 from . import transports
 from .log import logger
 from .compat import flatten_bytes
@@ -45,12 +46,12 @@ class _ProactorBasePipeTransport(transports._FlowControlMixin,
 
     def __repr__(self):
         info = [self.__class__.__name__]
-        fd = self._sock.fileno()
-        if fd < 0:
+        if self._sock is None:
             info.append('closed')
         elif self._closing:
             info.append('closing')
-        info.append('fd=%s' % fd)
+        if self._sock is not None:
+            info.append('fd=%s' % self._sock.fileno())
         if self._read_fut is not None:
             info.append('read=%s' % self._read_fut)
         if self._write_fut is not None:
@@ -74,6 +75,7 @@ class _ProactorBasePipeTransport(transports._FlowControlMixin,
             self._loop.call_soon(self._call_connection_lost, None)
         if self._read_fut is not None:
             self._read_fut.cancel()
+            self._read_fut = None
 
     def _fatal_error(self, exc, message='Fatal error on pipe transport'):
         if isinstance(exc, (BrokenPipeError, ConnectionResetError)):
@@ -95,9 +97,10 @@ class _ProactorBasePipeTransport(transports._FlowControlMixin,
         self._conn_lost += 1
         if self._write_fut:
             self._write_fut.cancel()
+            self._write_fut = None
         if self._read_fut:
             self._read_fut.cancel()
-        self._write_fut = self._read_fut = None
+            self._read_fut = None
         self._pending_write = 0
         self._buffer = None
         self._loop.call_soon(self._call_connection_lost, exc)
@@ -113,6 +116,7 @@ class _ProactorBasePipeTransport(transports._FlowControlMixin,
             if hasattr(self._sock, 'shutdown'):
                 self._sock.shutdown(socket.SHUT_RDWR)
             self._sock.close()
+            self._sock = None
             server = self._server
             if server is not None:
                 server._detach()
@@ -369,6 +373,20 @@ class BaseProactorEventLoop(base_events.BaseEventLoop):
         return _ProactorSocketTransport(self, sock, protocol, waiter,
                                         extra, server)
 
+    def _make_ssl_transport(self, rawsock, protocol, sslcontext, waiter=None,
+                            server_side=False, server_hostname=None,
+                            extra=None, server=None):
+        if not sslproto._is_sslproto_available():
+            raise NotImplementedError("Proactor event loop requires Python 3.5"
+                                      " or newer (ssl.MemoryBIO) to support "
+                                      "SSL")
+
+        ssl_protocol = sslproto.SSLProtocol(self, protocol, sslcontext, waiter,
+                                            server_side, server_hostname)
+        _ProactorSocketTransport(self, rawsock, ssl_protocol,
+                                 extra=extra, server=server)
+        return ssl_protocol._app_transport
+
     def _make_duplex_pipe_transport(self, sock, protocol, waiter=None,
                                     extra=None):
         return _ProactorDuplexPipeTransport(self,
@@ -389,12 +407,18 @@ class BaseProactorEventLoop(base_events.BaseEventLoop):
             raise RuntimeError("Cannot close a running event loop")
         if self.is_closed():
             return
+
+        # Call these methods before closing the event loop (before calling
+        # BaseEventLoop.close), because they can schedule callbacks with
+        # call_soon(), which is forbidden when the event loop is closed.
         self._stop_accept_futures()
         self._close_self_pipe()
-        super(BaseProactorEventLoop, self).close()
         self._proactor.close()
         self._proactor = None
         self._selector = None
+
+        # Close the event loop
+        super(BaseProactorEventLoop, self).close()
 
     def sock_recv(self, sock, n):
         return self._proactor.recv(sock, n)
@@ -451,9 +475,8 @@ class BaseProactorEventLoop(base_events.BaseEventLoop):
     def _write_to_self(self):
         self._csock.send(b'\0')
 
-    def _start_serving(self, protocol_factory, sock, ssl=None, server=None):
-        if ssl:
-            raise ValueError('IocpEventLoop is incompatible with SSL.')
+    def _start_serving(self, protocol_factory, sock,
+                       sslcontext=None, server=None):
 
         def loop(f=None):
             try:
@@ -463,9 +486,14 @@ class BaseProactorEventLoop(base_events.BaseEventLoop):
                         logger.debug("%r got a new connection from %r: %r",
                                      server, addr, conn)
                     protocol = protocol_factory()
-                    self._make_socket_transport(
-                        conn, protocol,
-                        extra={'peername': addr}, server=server)
+                    if sslcontext is not None:
+                        self._make_ssl_transport(
+                            conn, protocol, sslcontext, server_side=True,
+                            extra={'peername': addr}, server=server)
+                    else:
+                        self._make_socket_transport(
+                            conn, protocol,
+                            extra={'peername': addr}, server=server)
                 if self.is_closed():
                     return
                 f = self._proactor.accept(sock)
@@ -489,7 +517,8 @@ class BaseProactorEventLoop(base_events.BaseEventLoop):
         self.call_soon(loop)
 
     def _process_events(self, event_list):
-        pass    # XXX hard work currently done in poll
+        # Events are processed in the IocpProactor._poll() method
+        pass
 
     def _stop_accept_futures(self):
         for future in self._accept_futures.values():

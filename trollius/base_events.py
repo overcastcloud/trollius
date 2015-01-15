@@ -643,7 +643,12 @@ class BaseEventLoop(events.AbstractEventLoop):
         else:
             transport = self._make_socket_transport(sock, protocol, waiter)
 
-        yield From(waiter)
+        try:
+            yield From(waiter)
+        except Exception as exc:
+            transport.close()
+            raise
+
         raise Return(transport, protocol)
 
     @coroutine

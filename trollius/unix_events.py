@@ -205,7 +205,11 @@ class _UnixSelectorEventLoop(selector_events.BaseSelectorEventLoop):
             transp = _UnixSubprocessTransport(self, protocol, args, shell,
                                               stdin, stdout, stderr, bufsize,
                                               extra=extra, **kwargs)
-            yield From(transp._post_init())
+            try:
+                yield From(transp._post_init())
+            except:
+                transp.close()
+                raise
             watcher.add_child_handler(transp.get_pid(),
                                       self._child_watcher_callback, transp)
 
@@ -330,7 +334,12 @@ class _UnixReadPipeTransport(transports.ReadTransport):
             self._loop.call_soon(waiter._set_result_unless_cancelled, None)
 
     def __repr__(self):
-        info = [self.__class__.__name__, 'fd=%s' % self._fileno]
+        info = [self.__class__.__name__]
+        if self._pipe is None:
+            info.append('closed')
+        elif self._closing:
+            info.append('closing')
+        info.append('fd=%s' % self._fileno)
         if self._pipe is not None:
             polling = selector_events._test_selector_event(
                           self._loop._selector,
@@ -433,7 +442,12 @@ class _UnixWritePipeTransport(transports._FlowControlMixin,
             self._loop.call_soon(waiter._set_result_unless_cancelled, None)
 
     def __repr__(self):
-        info = [self.__class__.__name__, 'fd=%s' % self._fileno]
+        info = [self.__class__.__name__]
+        if self._pipe is None:
+            info.append('closed')
+        elif self._closing:
+            info.append('closing')
+        info.append('fd=%s' % self._fileno)
         if self._pipe is not None:
             polling = selector_events._test_selector_event(
                           self._loop._selector,
@@ -523,9 +537,6 @@ class _UnixWritePipeTransport(transports._FlowControlMixin,
     def can_write_eof(self):
         return True
 
-    # TODO: Make the relationships between write_eof(), close(),
-    # abort(), _fatal_error() and _close() more straightforward.
-
     def write_eof(self):
         if self._closing:
             return
@@ -536,7 +547,7 @@ class _UnixWritePipeTransport(transports._FlowControlMixin,
             self._loop.call_soon(self._call_connection_lost, None)
 
     def close(self):
-        if not self._closing:
+        if self._pipe is not None and not self._closing:
             # write_eof is all what we needed to close the write pipe
             self.write_eof()
 
@@ -933,7 +944,7 @@ class FastChildWatcher(BaseChildWatcher):
 
 
 class _UnixDefaultEventLoopPolicy(events.BaseDefaultEventLoopPolicy):
-    """XXX"""
+    """UNIX event loop policy with a watcher for child processes."""
     _loop_factory = _UnixSelectorEventLoop
 
     def __init__(self):
