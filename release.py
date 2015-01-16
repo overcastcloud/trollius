@@ -488,13 +488,6 @@ class Release(object):
             for pyver in self.python_versions:
                 self.publish_wheel(pyver)
 
-        hg_rev2 = self.check_output(HG, 'id').rstrip()
-        if hg_rev != hg_rev2:
-            print("ERROR: The Mercurial revision changed")
-            print("Before: %s" % hg_rev)
-            print("After: %s" % hg_rev2)
-            sys.exit(1)
-
         print("")
         print("Mercurial revision: %s" % hg_rev)
         if self.command == 'build':
@@ -512,6 +505,13 @@ class Release(object):
             print("Wheel packages uploaded to the Python cheeseshop (PyPI)")
         for pyver in self.python_versions:
             print("- %s" % pyver)
+
+        hg_rev2 = self.check_output(HG, 'id').rstrip()
+        if hg_rev != hg_rev2:
+            print("ERROR: The Mercurial revision changed during the execution")
+            print("Start: %s" % hg_rev)
+            print("End: %s" % hg_rev2)
+            sys.exit(1)
 
 
 if __name__ == "__main__":
