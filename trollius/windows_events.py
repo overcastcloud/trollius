@@ -81,8 +81,8 @@ class _OverlappedFuture(futures.Future):
 class _BaseWaitHandleFuture(futures.Future):
     """Subclass of Future which represents a wait handle."""
 
-    def __init__(self, ov, handle, wait_handle, *, loop=None):
-        super(_WaitHandleFuture, self).__init__(loop=loop)
+    def __init__(self, ov, handle, wait_handle, loop=None):
+        super(_BaseWaitHandleFuture, self).__init__(loop=loop)
         if self._source_traceback:
             del self._source_traceback[-1]
         # Keep a reference to the Overlapped object to keep it alive until the
@@ -101,7 +101,7 @@ class _BaseWaitHandleFuture(futures.Future):
                 _winapi.WAIT_OBJECT_0)
 
     def _repr_info(self):
-        info = super(_WaitHandleFuture, self)._repr_info()
+        info = super(_BaseWaitHandleFuture, self)._repr_info()
         info.append('handle=%#x' % self._handle)
         if self._handle is not None:
             state = 'signaled' if self._poll() else 'waiting'
@@ -142,15 +142,15 @@ class _BaseWaitHandleFuture(futures.Future):
 
     def cancel(self):
         self._unregister_wait()
-        return super(_WaitHandleFuture, self).cancel()
+        return super(_BaseWaitHandleFuture, self).cancel()
 
     def set_exception(self, exception):
         self._unregister_wait()
-        super(_WaitHandleFuture, self).set_exception(exception)
+        super(_BaseWaitHandleFuture, self).set_exception(exception)
 
     def set_result(self, result):
         self._unregister_wait()
-        super(_WaitHandleFuture, self).set_result(result)
+        super(_BaseWaitHandleFuture, self).set_result(result)
 
 
 class _WaitCancelFuture(_BaseWaitHandleFuture):
@@ -158,7 +158,7 @@ class _WaitCancelFuture(_BaseWaitHandleFuture):
     _WaitHandleFuture using an event.
     """
 
-    def __init__(self, ov, event, wait_handle, *, loop=None):
+    def __init__(self, ov, event, wait_handle, loop=None):
         super(_WaitCancelFuture, self).__init__(ov, event, wait_handle,
                                                 loop=loop)
 
@@ -171,7 +171,7 @@ class _WaitCancelFuture(_BaseWaitHandleFuture):
 
 
 class _WaitHandleFuture(_BaseWaitHandleFuture):
-    def __init__(self, ov, handle, wait_handle, proactor, *, loop=None):
+    def __init__(self, ov, handle, wait_handle, proactor, loop=None):
         super(_WaitHandleFuture, self).__init__(ov, handle, wait_handle,
                                                 loop=loop)
         self._proactor = proactor
@@ -223,7 +223,6 @@ class _WaitHandleFuture(_BaseWaitHandleFuture):
             self._event_fut = self._proactor._wait_cancel(
                                                 self._event,
                                                 self._unregister_wait_cb)
->>>>>>> other
 
 
 class PipeServer(object):
@@ -669,7 +668,7 @@ class IocpProactor(object):
         # Remove unregisted futures
         for ov in self._unregistered:
             self._cache.pop(ov.address, None)
-        self._unregistered.clear()
+        del self._unregistered[:]
 
     def _stop_serving(self, obj):
         # obj is a socket or pipe handle.  It will be closed in
