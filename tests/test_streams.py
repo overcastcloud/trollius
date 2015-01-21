@@ -418,10 +418,6 @@ class StreamReaderTests(test_utils.TestCase):
         def set_err():
             self.loop.call_soon(stream.set_exception, ValueError())
 
-        @asyncio.coroutine
-        def readline():
-            yield From(stream.readline())
-
         t1 = asyncio.Task(stream.readline(), loop=self.loop)
         t2 = asyncio.Task(set_err(), loop=self.loop)
 
@@ -432,11 +428,7 @@ class StreamReaderTests(test_utils.TestCase):
     def test_exception_cancel(self):
         stream = asyncio.StreamReader(loop=self.loop)
 
-        @asyncio.coroutine
-        def read_a_line():
-            yield From(stream.readline())
-
-        t = asyncio.Task(read_a_line(), loop=self.loop)
+        t = asyncio.Task(stream.readline(), loop=self.loop)
         test_utils.run_briefly(self.loop)
         t.cancel()
         test_utils.run_briefly(self.loop)

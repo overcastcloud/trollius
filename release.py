@@ -36,7 +36,7 @@ BATCH_FAIL_ON_ERROR = "@IF %errorlevel% neq 0 exit /b %errorlevel%"
 WINDOWS = (sys.platform == 'win32')
 
 
-def get_archiecture_bits():
+def get_architecture_bits():
     arch = platform.architecture()[0]
     return int(arch[:2])
 
@@ -50,7 +50,7 @@ class PythonVersion:
 
     @staticmethod
     def running():
-        bits = get_archiecture_bits()
+        bits = get_architecture_bits()
         pyver = PythonVersion(sys.version_info.major,
                               sys.version_info.minor,
                               bits)
@@ -129,7 +129,7 @@ class Release(object):
         if WINDOWS:
             supported_archs = (32, 64)
         else:
-            bits = get_archiecture_bits()
+            bits = get_architecture_bits()
             supported_archs = (bits,)
         for major, minor in PYTHON_VERSIONS:
             for bits in supported_archs:
