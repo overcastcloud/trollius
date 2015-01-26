@@ -521,9 +521,9 @@ class IocpProactor(object):
             # Call CreateFile() in a loop until it doesn't fail with
             # ERROR_PIPE_BUSY
             try:
-                handle = _overlapped.ConnectPipe(address)
+                handle = wrap_error(_overlapped.ConnectPipe, address)
                 break
-            except OSError as exc:
+            except WindowsError as exc:
                 if exc.winerror != _overlapped.ERROR_PIPE_BUSY:
                     raise
 
