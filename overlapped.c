@@ -1164,8 +1164,9 @@ static PyObject *
 ConnectPipe(OverlappedObject *self, PyObject *args)
 {
     PyObject *AddressObj;
-    wchar_t *Address;
     HANDLE PipeHandle;
+#ifdef PYTHON3
+    wchar_t *Address;
 
     if (!PyArg_ParseTuple(args, "U",  &AddressObj))
         return NULL;
@@ -1174,14 +1175,26 @@ ConnectPipe(OverlappedObject *self, PyObject *args)
     if (Address == NULL)
         return NULL;
 
+#   define CREATE_FILE CreateFileW
+#else
+    char *Address;
+
+    if (!PyArg_ParseTuple(args, "s",  &Address))
+        return NULL;
+
+#   define CREATE_FILE CreateFileA
+#endif
+
     Py_BEGIN_ALLOW_THREADS
-    PipeHandle = CreateFileW(Address,
+    PipeHandle = CREATE_FILE(Address,
                              GENERIC_READ | GENERIC_WRITE,
                              0, NULL, OPEN_EXISTING,
                              FILE_FLAG_OVERLAPPED, NULL);
     Py_END_ALLOW_THREADS
 
+#ifdef PYTHON3
     PyMem_Free(Address);
+#endif
     if (PipeHandle == INVALID_HANDLE_VALUE)
         return SetFromWindowsErr(0);
     return Py_BuildValue(F_HANDLE, PipeHandle);
