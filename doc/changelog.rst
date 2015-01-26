@@ -5,26 +5,8 @@ Change log
 Version 1.0.5
 =============
 
-SSL::
-
-    Python issue #22560: New SSL implementation based on ssl.MemoryBIO
-
-    The new SSL implementation is based on the new ssl.MemoryBIO which is only
-    available on Python 3.5. On Python 3.4 and older, the legacy SSL implementation
-    (using SSL_write, SSL_read, etc.) is used. The proactor event loop only
-    supports the new implementation.
-
-    The new asyncio.sslproto module adds _SSLPipe, SSLProtocol and
-    _SSLProtocolTransport classes. _SSLPipe allows to "wrap" or "unwrap" a socket
-    (switch between cleartext and SSL/TLS).
-
-    Patch written by Antoine Pitrou. sslproto.py is based on gruvi/ssl.py of the
-    gruvi project written by Geert Jansen.
-
-    This change adds SSL support to ProactorEventLoop on Python 3.5 and newer!
-
-    It becomes also possible to implement STARTTTLS: switch a cleartext socket to
-    SSL.
+Major changes: on Python 3.5+ ProactorEventLoop now supports SSL, a lot of
+bugfixes (random race conditions) in the ProactorEventLoop.
 
 API changes:
 
@@ -32,9 +14,54 @@ API changes:
   RuntimeError if the selector is closed. And selectors.BaseSelector.close()
   now clears its internal reference to the selector mapping to break a
   reference cycle. Initial patch written by Martin Richard.
+* PipeHandle.fileno() of asyncio.windows_utils now raises an exception if the
+  pipe is closed.
+* Remove Overlapped.WaitNamedPipeAndConnect() of the _overlapped module,
+  it is no more used and it had issues.
+
+New SSL implementation:
+
+* Python issue #22560: On Python 3.5 and newer, a new SSL implementation based
+  on ssl.MemoryBIO instead of the legacy SSL implementation. Patch written by
+  Antoine Pitrou, based on the work of Geert Jansen.
+* If available, the new SSL implementation can be used by ProactorEventLoop to
+  support SSL.
+
+Enhance, fix and cleanup the IocpProactor:
+
+* Python issue #23293: Rewrite IocpProactor.connect_pipe(). Add
+  _overlapped.ConnectPipe() which tries to connect to the pipe for asynchronous
+  I/O (overlapped): call CreateFile() in a loop until it doesn't fail with
+  ERROR_PIPE_BUSY. Use an increasing delay between 1 ms and 100 ms.
+* Tulip issue #204: Fix IocpProactor.accept_pipe().
+  Overlapped.ConnectNamedPipe() now returns a boolean: True if the pipe is
+  connected (if ConnectNamedPipe() failed with ERROR_PIPE_CONNECTED), False if
+  the connection is in progress.
+* Tulip issue #204: Fix IocpProactor.recv(). If ReadFile() fails with
+  ERROR_BROKEN_PIPE, the operation is not pending: don't register the
+  overlapped.
+* Python issue #23095: Rewrite _WaitHandleFuture.cancel().
+  _WaitHandleFuture.cancel() now waits until the wait is cancelled to clear its
+  reference to the overlapped object. To wait until the cancellation is done,
+  UnregisterWaitEx() is used with an event instead of UnregisterWait().
+* Python issue #23293: Rewrite IocpProactor.connect_pipe() as a coroutine. Use
+  a coroutine with asyncio.sleep() instead of call_later() to ensure that the
+  schedule call is cancelled.
+* Fix ProactorEventLoop.start_serving_pipe(). If a client connected before the
+  server was closed: drop the client (close the pipe) and exit
+* Python issue #23293: Cleanup IocpProactor.close(). The special case for
+  connect_pipe() is not more needed. connect_pipe() doesn't use overlapped
+  operations anymore.
+*  IocpProactor.close(): don't cancel futures which are already cancelled
+* Enhance (fix) BaseProactorEventLoop._loop_self_reading(). Handle correctly
+  CancelledError: just exit. On error, log the exception and exit; don't try to
+  close the event loop (it doesn't work).
 
 Bugfixes:
 
+* Close transports on error. Fix create_datagram_endpoint(),
+  connect_read_pipe() and connect_write_pipe(): close the transport if the task
+  is cancelled or on error.
 * Close the transport on subprocess creation failure
 * Fix _ProactorBasePipeTransport.close(). Set the _read_fut attribute to None
   after cancelling it.
@@ -57,6 +84,9 @@ Bugfixes:
 
 Changes:
 
+* Python issue #23208: Add BaseEventLoop._current_handle. In debug mode,
+  BaseEventLoop._run_once() now sets the BaseEventLoop._current_handle
+  attribute to the handle currently executed.
 * Replace test_selectors.py with the file of Python 3.5 adapted for asyncio and
   Python 3.3.
 * Tulip issue #184: FlowControlMixin constructor now get the event loop if the
