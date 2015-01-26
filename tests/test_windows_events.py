@@ -12,6 +12,7 @@ from trollius import _overlapped
 from trollius import py33_winapi as _winapi
 from trollius import windows_events
 from trollius.py33_exceptions import PermissionError, FileNotFoundError
+from trollius.test_utils import mock
 
 
 class UpperProto(asyncio.Protocol):
@@ -91,6 +92,18 @@ class ProactorTests(test_utils.TestCase):
                 asyncio.Protocol, ADDRESS))
 
         raise Return('done')
+
+    def test_connect_pipe_cancel(self):
+        exc = OSError()
+        exc.winerror = _overlapped.ERROR_PIPE_BUSY
+        with mock.patch.object(_overlapped, 'ConnectPipe', side_effect=exc) as connect:
+            coro = self.loop._proactor.connect_pipe('pipe_address')
+            task = self.loop.create_task(coro)
+
+            # check that it's possible to cancel connect_pipe()
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                self.loop.run_until_complete(task)
 
     def test_wait_for_handle(self):
         event = _overlapped.CreateEvent(None, True, False, None)

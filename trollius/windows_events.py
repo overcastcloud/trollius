@@ -17,7 +17,8 @@ from . import windows_utils
 from . import _overlapped
 from .coroutines import coroutine, From, Return
 from .log import logger
-from .py33_exceptions import wrap_error, get_error_class, ConnectionRefusedError
+from .py33_exceptions import (wrap_error, get_error_class,
+    ConnectionRefusedError, BrokenPipeError)
 
 
 __all__ = ['SelectorEventLoop', 'ProactorEventLoop', 'IocpProactor',
@@ -29,6 +30,13 @@ NULL = 0
 INFINITE = 0xffffffff
 ERROR_CONNECTION_REFUSED = 1225
 ERROR_CONNECTION_ABORTED = 1236
+
+# Initial delay in seconds for connect_pipe() before retrying to connect
+CONNECT_PIPE_INIT_DELAY = 0.001
+
+# Maximum delay in seconds for connect_pipe() before retrying to connect
+CONNECT_PIPE_MAX_DELAY = 0.100
+
 
 class _OverlappedFuture(futures.Future):
     """Subclass of Future which represents an overlapped operation.
@@ -120,14 +128,12 @@ class _BaseWaitHandleFuture(futures.Future):
             return
         self._registered = False
 
+        wait_handle = self._wait_handle
+        self._wait_handle = None
         try:
-            _overlapped.UnregisterWait(self._wait_handle)
+            _overlapped.UnregisterWait(wait_handle)
         except WindowsError as exc:
-            self._wait_handle = None
-            if exc.winerror == _overlapped.ERROR_IO_PENDING:
-                # ERROR_IO_PENDING is not an error, the wait was unregistered
-                self._unregister_wait_cb(None)
-            elif exc.winerror != _overlapped.ERROR_IO_PENDING:
+            if exc.winerror != _overlapped.ERROR_IO_PENDING:
                 context = {
                     'message': 'Failed to unregister the wait handle',
                     'exception': exc,
@@ -136,9 +142,10 @@ class _BaseWaitHandleFuture(futures.Future):
                 if self._source_traceback:
                     context['source_traceback'] = self._source_traceback
                 self._loop.call_exception_handler(context)
-        else:
-            self._wait_handle = None
-            self._unregister_wait_cb(None)
+                return
+            # ERROR_IO_PENDING means that the unregister is pending
+
+        self._unregister_wait_cb(None)
 
     def cancel(self):
         self._unregister_wait()
@@ -205,14 +212,12 @@ class _WaitHandleFuture(_BaseWaitHandleFuture):
             return
         self._registered = False
 
+        wait_handle = self._wait_handle
+        self._wait_handle = None
         try:
-            _overlapped.UnregisterWaitEx(self._wait_handle, self._event)
+            _overlapped.UnregisterWaitEx(wait_handle, self._event)
         except OSError as exc:
-            self._wait_handle = None
-            if exc.winerror == _overlapped.ERROR_IO_PENDING:
-                # ERROR_IO_PENDING is not an error, the wait was unregistered
-                self._unregister_wait_cb(None)
-            elif exc.winerror != _overlapped.ERROR_IO_PENDING:
+            if exc.winerror != _overlapped.ERROR_IO_PENDING:
                 context = {
                     'message': 'Failed to unregister the wait handle',
                     'exception': exc,
@@ -221,11 +226,11 @@ class _WaitHandleFuture(_BaseWaitHandleFuture):
                 if self._source_traceback:
                     context['source_traceback'] = self._source_traceback
                 self._loop.call_exception_handler(context)
-        else:
-            self._wait_handle = None
-            self._event_fut = self._proactor._wait_cancel(
-                                                self._event,
-                                                self._unregister_wait_cb)
+                return
+            # ERROR_IO_PENDING is not an error, the wait was unregistered
+
+        self._event_fut = self._proactor._wait_cancel(self._event,
+                                                      self._unregister_wait_cb)
 
 
 class PipeServer(object):
@@ -253,7 +258,7 @@ class PipeServer(object):
 
     def _server_pipe_handle(self, first):
         # Return a wrapper for a new pipe handle.
-        if self._address is None:
+        if self.closed():
             return None
         flags = _winapi.PIPE_ACCESS_DUPLEX | _winapi.FILE_FLAG_OVERLAPPED
         if first:
@@ -268,6 +273,9 @@ class PipeServer(object):
         pipe = windows_utils.PipeHandle(h)
         self._free_instances.add(pipe)
         return pipe
+
+    def closed(self):
+        return (self._address is None)
 
     def close(self):
         if self._accept_pipe_future is not None:
@@ -321,12 +329,21 @@ class ProactorEventLoop(proactor_events.BaseProactorEventLoop):
                 if f:
                     pipe = f.result()
                     server._free_instances.discard(pipe)
+
+                    if server.closed():
+                        # A client connected before the server was closed:
+                        # drop the client (close the pipe) and exit
+                        pipe.close()
+                        return
+
                     protocol = protocol_factory()
                     self._make_duplex_pipe_transport(
                         pipe, protocol, extra={'addr': address})
+
                 pipe = server._get_unconnected_pipe()
                 if pipe is None:
                     return
+
                 f = self._proactor.accept_pipe(pipe)
             except OSError as exc:
                 if pipe and pipe.fileno() != -1:
@@ -393,13 +410,21 @@ class IocpProactor(object):
         self._results = []
         return tmp
 
+    def _result(self, value):
+        fut = futures.Future(loop=self._loop)
+        fut.set_result(value)
+        return fut
+
     def recv(self, conn, nbytes, flags=0):
         self._register_with_iocp(conn)
         ov = _overlapped.Overlapped(NULL)
-        if isinstance(conn, socket.socket):
-            wrap_error(ov.WSARecv, conn.fileno(), nbytes, flags)
-        else:
-            wrap_error(ov.ReadFile, conn.fileno(), nbytes)
+        try:
+            if isinstance(conn, socket.socket):
+                wrap_error(ov.WSARecv, conn.fileno(), nbytes, flags)
+            else:
+                wrap_error(ov.ReadFile, conn.fileno(), nbytes)
+        except BrokenPipeError:
+            return self._result(b'')
 
         def finish_recv(trans, key, ov):
             return wrap_error(ov.getresult)
@@ -474,40 +499,39 @@ class IocpProactor(object):
     def accept_pipe(self, pipe):
         self._register_with_iocp(pipe)
         ov = _overlapped.Overlapped(NULL)
-        ov.ConnectNamedPipe(pipe.fileno())
+        connected = ov.ConnectNamedPipe(pipe.fileno())
+
+        if connected:
+            # ConnectNamePipe() failed with ERROR_PIPE_CONNECTED which means
+            # that the pipe is connected. There is no need to wait for the
+            # completion of the connection.
+            return self._result(pipe)
 
         def finish_accept_pipe(trans, key, ov):
             wrap_error(ov.getresult)
             return pipe
 
-        # FIXME: Tulip issue 196: why do we need register=False?
-        # See also the comment in the _register() method
-        return self._register(ov, pipe, finish_accept_pipe,
-                              register=False)
+        return self._register(ov, pipe, finish_accept_pipe)
 
+    @coroutine
     def connect_pipe(self, address):
-        ov = _overlapped.Overlapped(NULL)
-        ov.WaitNamedPipeAndConnect(address, self._iocp, ov.address)
+        delay = CONNECT_PIPE_INIT_DELAY
+        while True:
+            # Unfortunately there is no way to do an overlapped connect to a pipe.
+            # Call CreateFile() in a loop until it doesn't fail with
+            # ERROR_PIPE_BUSY
+            try:
+                handle = _overlapped.ConnectPipe(address)
+                break
+            except OSError as exc:
+                if exc.winerror != _overlapped.ERROR_PIPE_BUSY:
+                    raise
 
-        def finish_connect_pipe(err, handle, ov):
-            # err, handle were arguments passed to PostQueuedCompletionStatus()
-            # in a function run in a thread pool.
-            if err == _overlapped.ERROR_SEM_TIMEOUT:
-                # Connection did not succeed within time limit.
-                msg = _overlapped.FormatMessage(err)
-                raise ConnectionRefusedError(0, msg, None, err)
-            elif err != 0:
-                msg = _overlapped.FormatMessage(err)
-                err_cls = get_error_class(err, None)
-                if err_cls is not None:
-                    raise err_cls(0, msg, None, err)
-                else:
-                    raise WindowsError(err, msg)
-            else:
-                return windows_utils.PipeHandle(handle)
+            # ConnectPipe() failed with ERROR_PIPE_BUSY: retry later
+            delay = min(delay * 2, CONNECT_PIPE_MAX_DELAY)
+            yield From(tasks.sleep(delay, loop=self._loop))
 
-        return self._register(ov, None, finish_connect_pipe,
-                              wait_for_post=True)
+        raise Return(windows_utils.PipeHandle(handle))
 
     def wait_for_handle(self, handle, timeout=None):
         """Wait for a handle.
@@ -566,15 +590,14 @@ class IocpProactor(object):
             # to avoid sending notifications to completion port of ops
             # that succeed immediately.
 
-    def _register(self, ov, obj, callback,
-                  wait_for_post=False, register=True):
+    def _register(self, ov, obj, callback):
         # Return a future which will be set with the result of the
         # operation when it completes.  The future's value is actually
         # the value returned by callback().
         f = _OverlappedFuture(ov, loop=self._loop)
         if f._source_traceback:
             del f._source_traceback[-1]
-        if not ov.pending and not wait_for_post:
+        if not ov.pending:
             # The operation has completed, so no need to postpone the
             # work.  We cannot take this short cut if we need the
             # NumberOfBytes, CompletionKey values returned by
@@ -590,18 +613,11 @@ class IocpProactor(object):
             # Register the overlapped operation to keep a reference to the
             # OVERLAPPED object, otherwise the memory is freed and Windows may
             # read uninitialized memory.
-            #
-            # For an unknown reason, ConnectNamedPipe() behaves differently:
-            # the completion is not notified by GetOverlappedResult() if we
-            # already called GetOverlappedResult(). For this specific case, we
-            # don't expect notification (register is set to False).
-        else:
-            register = True
-        if register:
-            # Register the overlapped operation for later.  Note that
-            # we only store obj to prevent it from being garbage
-            # collected too early.
-            self._cache[ov.address] = (f, ov, obj, callback)
+
+        # Register the overlapped operation for later.  Note that
+        # we only store obj to prevent it from being garbage
+        # collected too early.
+        self._cache[ov.address] = (f, ov, obj, callback)
         return f
 
     def _unregister(self, ov):
@@ -682,14 +698,9 @@ class IocpProactor(object):
     def close(self):
         # Cancel remaining registered operations.
         for address, (fut, ov, obj, callback) in list(self._cache.items()):
-            if obj is None:
-                # The operation was started with connect_pipe() which
-                # queues a task to Windows' thread pool.  This cannot
-                # be cancelled, so just forget it.
-                del self._cache[address]
-            # FIXME: Tulip issue 196: remove this case, it should not happen
-            elif fut.done() and not fut.cancelled():
-                del self._cache[address]
+            if fut.cancelled():
+                # Nothing to do with cancelled futures
+                pass
             elif isinstance(fut, _WaitCancelFuture):
                 # _WaitCancelFuture must not be cancelled
                 pass

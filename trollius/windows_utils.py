@@ -155,6 +155,8 @@ class PipeHandle(object):
         return self._handle
 
     def fileno(self):
+        if self._handle is None:
+            raise ValueError("I/O operatioon on closed pipe")
         return self._handle
 
     def close(self, CloseHandle=_winapi.CloseHandle):
