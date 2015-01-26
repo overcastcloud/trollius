@@ -132,7 +132,7 @@ class _BaseWaitHandleFuture(futures.Future):
         self._wait_handle = None
         try:
             _overlapped.UnregisterWait(wait_handle)
-        except WindowsError as exc:
+        except OSError as exc:
             if exc.winerror != _overlapped.ERROR_IO_PENDING:
                 context = {
                     'message': 'Failed to unregister the wait handle',
@@ -478,8 +478,8 @@ class IocpProactor(object):
         # The socket needs to be locally bound before we call ConnectEx().
         try:
             _overlapped.BindLocal(conn.fileno(), conn.family)
-        except WindowsError as e:
-            if e.winerror != errno.WSAEINVAL:
+        except WindowsError as exc:
+            if exc.winerror != errno.WSAEINVAL:
                 raise
             # Probably already locally bound; check using getsockname().
             if conn.getsockname()[1] == 0:
@@ -604,8 +604,8 @@ class IocpProactor(object):
             # PostQueuedCompletionStatus().
             try:
                 value = callback(None, None, ov)
-            except OSError as e:
-                f.set_exception(e)
+            except OSError as exc:
+                f.set_exception(exc)
             else:
                 f.set_result(value)
             # Even if GetOverlappedResult() was called, we have to wait for the
@@ -707,7 +707,7 @@ class IocpProactor(object):
             else:
                 try:
                     fut.cancel()
-                except WindowsError as exc:
+                except OSError as exc:
                     if self._loop is not None:
                         context = {
                             'message': 'Cancelling a future failed',
