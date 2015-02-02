@@ -58,3 +58,19 @@ And coverage as follows::
 
     C:\Python27\python.exe runtests.py --coverage
 
+
+CPython bugs
+============
+
+The development of asyncio and trollius helped to identify different bugs in CPython:
+
+* sys.exc_info() bug when yield/yield-from is used in an except block in a
+  generator. The fix will be part of Python 3.4.3. Python 3.3 and older are
+  affected.
+  http://bugs.python.org/issue23353
+* Segfault in gc with cyclic trash
+  http://bugs.python.org/issue21435
+* gen.send(tuple) unpacks the tuple instead of passing 1 argument (the tuple)
+  when gen is an object with a send() method, not a classic generator.
+  http://bugs.python.org/21209
+
