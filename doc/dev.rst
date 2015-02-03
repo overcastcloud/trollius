@@ -72,6 +72,11 @@ The development of asyncio and trollius helped to identify different bugs in CPy
 * python == 3.4.0: `Segfault in gc with cyclic trash (#21435)
   <http://bugs.python.org/issue21435>`_.
   Regression introduced in Python 3.4.0, fixed in Python 3.4.1.
+  Status in Ubuntu the February, 3th 2015: only Ubuntu Trusty (14.04 LTS) is
+  impacted (`bug #1367907:  Segfault in gc with cyclic trash
+  <https://bugs.launchpad.net/ubuntu/+source/python3.4/+bug/1367907>`_, see
+  also `update Python3 for trusty #1348954
+  <https://bugs.launchpad.net/ubuntu/+source/python3.4/+bug/1348954>`_)
 * 3.3.0 <= python <= 3.4.0: `gen.send(tuple) unpacks the tuple instead of
   passing 1 argument (the tuple) when gen is an object with a send() method,
   not a classic generator (#21209) <http://bugs.python.org/21209>`_.
