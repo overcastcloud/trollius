@@ -64,13 +64,17 @@ CPython bugs
 
 The development of asyncio and trollius helped to identify different bugs in CPython:
 
-* sys.exc_info() bug when yield/yield-from is used in an except block in a
-  generator. The fix will be part of Python 3.4.3. Python 3.3 and older are
-  affected.
-  http://bugs.python.org/issue23353
-* Segfault in gc with cyclic trash
-  http://bugs.python.org/issue21435
-* gen.send(tuple) unpacks the tuple instead of passing 1 argument (the tuple)
-  when gen is an object with a send() method, not a classic generator.
-  http://bugs.python.org/21209
-
+* 2.5.0 <= python <= 3.4.2: `sys.exc_info() bug when yield/yield-from is used
+  in an except block in a generator (#23353>)
+  <http://bugs.python.org/issue23353>`_.  The fix will be part of Python 3.4.3.
+  _UnixSelectorEventLoop._make_subprocess_transport() and
+  ProactorEventLoop._make_subprocess_transport() work around the bug.
+* python == 3.4.0: `Segfault in gc with cyclic trash (#21435)
+  <http://bugs.python.org/issue21435>`_.
+  Regression introduced in Python 3.4.0, fixed in Python 3.4.1.
+* 3.3.0 <= python <= 3.4.0: `gen.send(tuple) unpacks the tuple instead of
+  passing 1 argument (the tuple) when gen is an object with a send() method,
+  not a classic generator (#21209) <http://bugs.python.org/21209>`_.
+  Regression introduced in Python 3.4.0, fixed in Python 3.4.1.
+  trollius.CoroWrapper.send() works around the issue, the bug is checked at
+  runtime once, when the module is imported.
