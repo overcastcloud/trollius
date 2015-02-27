@@ -41,8 +41,13 @@ Linux, Mac OS X, FreeBSD and OpenIndiana.
 * `Asyncio documentation <http://docs.python.org/dev/library/asyncio.html>`_
 * `Trollius documentation <http://trollius.readthedocs.org/>`_ (this document)
 * `Trollius project in the Python Cheeseshop (PyPI)
-  <https://pypi.python.org/pypi/trollius>`_
+  <https://pypi.python.org/pypi/trollius>`_ (download wheel packages and
+  tarballs)
 * `Trollius project at Bitbucket <https://bitbucket.org/enovance/trollius>`_
+  (bug tracker, source code)
+* Mailing list: `python-tulip Google Group
+  <https://groups.google.com/forum/?fromgroups#!forum/python-tulip>`_
+* IRC: ``#asyncio`` channel on the `Freenode network <https://freenode.net/>`_
 * Copyright/license: Open source, Apache 2.0. Enjoy!
 
 See also the `Tulip project <http://code.google.com/p/tulip/>`_ (asyncio module
